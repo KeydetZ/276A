@@ -52,32 +52,47 @@ def pose_inverse(pose):
     return result
 
 class update():
-    def __init__(self, M, D, q):
-        self.mu = np.eye(4)
-        self.sigma = np.eye(6)
+    def __init__(self, M, D):
+        # mu: 4x1
+        self.mu = np.array([0, 0, 0, 1]).T
+        self.sigma = np.eye(3)
         self.M = M
         self.D = D
-        self.q = q
+        #self.q = cam_T_imu @ self.mu
+        self.z = self.z_hat()
 
-    def z_hat(self):
+    def z_hat(self, Tt):
         # 4x1
-        return self.M @ projection_d(self.q)
+        q = cam_T_imu @ Tt @ self.mu
+        return self.M @ projection_d(q)
 
     def kalman_gain(self):
-        Kt = prediction.pose_sigma @ H.T @ (H @ prediction.pose_sigma @ H.T + Q)
+        # 3x3 @ 3X4 @ (4X3 @ 3x3 @ 3x4 + 4x4) = 3x4
+        Q = np.eye(4)
+        H = self.jacobian()
+        Kt = self.sigma @ H.T @ (H @ self.sigma @ H.T + Q)
         return Kt
 
-    def jacobian(self):
-        H = self.M @ projection_d(self.q) @ self.D
+    def jacobian(self, Tt):
+        q = cam_T_imu @ Tt @ self.mu
+        # 4x4 @ 4x4 @ 4X3 = 4X3
+        H = self.M @ projection_d(q) @ self.D
         return H
 
-    def predict_mu(self):
-        z_current = self.z_hat()
-        z_previous =
-        self.mu = self.mu + D @ Kt @ ()
-
+    def predict_mu(self, feature):
+        zt = feature
+        Kt = self.kalman_gain()
+        self.mu = self.mu + self.D @ Kt @ (zt - self.z)
+        # self.q = cam_T_imu @ self.mu
 
     def predict_sigma(self):
+        H = self.jacobian()
+        I = np.eye(3)
+        Kt = self.kalman_gain()
+        self.sigma = (I - Kt @ H) @ self.sigma
+
+    def update_param(self):
+        #self.q = cam_T_imu @ self.mu
 
 
 
@@ -136,7 +151,7 @@ if __name__ == '__main__':
     # (a) IMU Localization via EKF Prediction
     prediction = localizer()
     for i in range(len(t[0]) - 1):
-        print('time epoch %d' %i)
+        print('predict time epoch %d' %i)
         t_interval = t[0][i + 1] - t[0][i]
         prediction.predict_mu(t_interval, u[i])
         prediction.predict_sigma(t_interval, u[i])
@@ -148,43 +163,11 @@ if __name__ == '__main__':
     visualize_trajectory_2d(pose)
 
     # (b) Landmark Mapping via EKF Update
-    indValid = valid_features(features)
+    # initialize:
+    update = update()
+    for i in range(len(t[0]) - 1):
+        print('update time epoch %d' %i)
 
-    mu = prediction.pose_mu
-    # 4x4 @ (4x4 @ 4x4) = 4x4
-    q = cam_T_imu.T @ mu
-
-    # K: (left)
-    # camera
-    # intrinsic
-    # matrix
-    # [fx  0 cx
-    #  0 fy cy
-    #  0  0  1]
-    # with shape 3 * 3
-    fx = K[0][0]
-    fy = K[0][1]
-    cx = K[0][2]
-    cy = K[1][2]
-
-    M = [[fx, 0, cx, 0],
-         [0, fy, cy, 0],
-         [fx, 0, cx, -fx * b],
-         [0, fy, cy, 0]]
-
-    D = [[1, 0, 0],
-         [0, 1, 0],
-         [0, 0, 1],
-         [0, 0, 0]]
-
-    # Jacobian H
-    # 3X3 @
-    H = M @ projection_d(q) @ D
-
-    # Q is identity with size V.
-
-    # Kalman gain. remember to change * to matmul
-    Kt = prediction.pose_sigma @ H.T @ (H @ prediction.pose_sigma @ H.T + Q)
 
     # (c) Visual-Inertial SLAM (Extra Credit)
 
