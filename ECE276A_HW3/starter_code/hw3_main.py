@@ -76,8 +76,6 @@ class update():
 
     def z_hat(self, Tt, valid_index):
         # 4x4 @ 4x4 @ 4xN = 4xN
-        print(self.mu[:, valid_index].reshape((4, -1)))
-        print('tt', Tt)
         q = cam_T_imu @ Tt @ self.mu[:, valid_index].reshape((4, -1))
         return self.M @ projection(q)
 
@@ -156,10 +154,10 @@ def projection(q):
     return (1 / q[2, :]) * q
 
 
-def W_T_O(zt, M, cam_T_imu, pose):
+def w_T_o(zt, M, cam_T_imu, pose):
     zt.reshape(4, 1)
     x1 = (zt[0] - M[0][2]) / M[0][0]
-    x2 = (zt[1] - M[1][2]) / M[0][0]
+    x2 = (zt[1] - M[1][2]) / M[1][1]
     x4 = (zt[0] - zt[2]) / -M[2][3]
 
     q3 = 1 / x4
@@ -240,11 +238,8 @@ if __name__ == '__main__':
                   0  0  0  1]
                 with shape 4*4
     """
-    filename = "./data/0042.npz"
+    filename = "./data/0020.npz"
     t, features, linear_velocity, rotational_velocity, K, b, cam_T_imu = load_data(filename)
-    # pose = [0, 0, 0]
-    # prev_pose = [0, 0, 0]
-    # t_interval = 0.1
     u = np.vstack((linear_velocity, rotational_velocity)).T
     pose = np.eye(4)
     pose_before_inverse = np.eye(4)
@@ -308,7 +303,7 @@ if __name__ == '__main__':
                 idx = indValid[0][num]
                 # if never seen this feature then update and set it to seen
                 if flag[idx] == False:
-                    landmarks[:, idx] = W_T_O(z[:, num], M, cam_T_imu, pose)
+                    landmarks[:, idx] = w_T_o(z[:, num], M, cam_T_imu, pose)
                     flag[idx] = True
             # 4xN
             landmark_i = landmarks[:, indValid[0]].reshape((4, -1))
@@ -377,7 +372,7 @@ if __name__ == '__main__':
                 idx = indValid[0][num]
                 # if never seen this feature then update and set it to seen
                 if flag[idx] == False:
-                    landmarks[:, idx] = W_T_O(z[:, num], M, cam_T_imu, pose)
+                    landmarks[:, idx] = w_T_o(z[:, num], M, cam_T_imu, pose)
                     flag[idx] = True
             # 4xN
             landmark_i = landmarks[:, indValid[0]].reshape((4, -1))
@@ -428,7 +423,7 @@ if __name__ == '__main__':
             for num in range(N_next):
                 idx = indValid_next[0][num]
                 if flag_m[idx] == False:
-                    landmarks_update[:, idx] = W_T_O(z_plus[:, num], M, cam_T_imu, pose)
+                    landmarks_update[:, idx] = w_T_o(z_plus[:, num], M, cam_T_imu, pose)
                     flag_m[idx] = True
             # 4xN
             landmark_next = landmarks_update[:, indValid_next[0]].reshape((4, -1))
@@ -447,11 +442,11 @@ if __name__ == '__main__':
                 proj_der = M @ proj_der @ cam_T_imu @ circle_dot_operation(imu_pose)
                 # 4Nx6
                 H_next[4 * j:4 * j + 4, :] = proj_der
+
             # perform the EKF update
-            local_v = 100000
             # 6x4N
-            Kt_next = sigma_next @ H_next.T @ np.linalg.inv(
-                (H_next @ sigma_next @ H_next.T) + local_v * np.eye(4 * N_next))
+            Kt_next = sigma_next @ H_next.T @ np.linalg.inv((H_next @ sigma_next @ H_next.T) + 100000 * np.eye(4 * N_next))
+
             # pose update
             temp = Kt_next @ (z_plus.reshape((4 * N_next, 1)) - z_hat_plus.reshape((4 * N_next, 1)))
             temp_hat = twist_hat(temp[0:3, :], temp[3:6, :])
